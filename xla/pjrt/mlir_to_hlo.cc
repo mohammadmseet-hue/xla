@@ -105,7 +105,7 @@ absl::Status MlirToXlaComputation(
     // TODO(b/420837831): Remove this once we don't need to fall back to GSPMD.
     if (exec_build_options && exec_build_options->use_shardy_partitioner() &&
         xla::sdy::hasGspmdAttrsOrOps(module)) {
-      LOG(WARNING)
+      LOG(FATAL)
           << "Module has GSPMD attrs or ops, but Shardy is enabled. Disabling "
              "Shardy and falling back to using GSPMD propagation.";
       exec_build_options->set_use_shardy_partitioner(false);
@@ -259,11 +259,13 @@ std::optional<mlir::StringRef> FindPotentiallyUnstableDialects(
   // Check that all ops are from known stable dialects.
   std::optional<mlir::StringRef> unstable_dialect = std::nullopt;
   module->walk([&](mlir::Operation* op) {
-    if (!llvm::isa<mlir::stablehlo::StablehloDialect, mlir::chlo::ChloDialect,
-                   mlir::sdy::SdyDialect>(op->getDialect()) &&
-        !llvm::isa<mlir::ModuleOp, mlir::func::FuncOp, mlir::func::CallOp,
-                   mlir::func::ReturnOp>(op) &&
-        !stable_dialects.contains(op->getDialect()->getNamespace())) {
+    mlir::Dialect* dialect = op->getDialect();
+    if (!dialect ||
+        (!llvm::isa<mlir::stablehlo::StablehloDialect, mlir::chlo::ChloDialect,
+                    mlir::sdy::SdyDialect>(dialect) &&
+         !llvm::isa<mlir::ModuleOp, mlir::func::FuncOp, mlir::func::CallOp,
+                    mlir::func::ReturnOp>(op) &&
+         !stable_dialects.contains(dialect->getNamespace()))) {
       unstable_dialect = op->getName().getStringRef();
       return mlir::WalkResult::interrupt();
     }
