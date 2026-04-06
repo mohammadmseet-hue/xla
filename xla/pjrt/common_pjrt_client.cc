@@ -566,6 +566,20 @@ void CommonPjRtBufferImpl::CopyToRemoteDevice(
       std::move(on_done));
 }
 
+Future<> CommonPjRtRawBufferImpl::CopyRawToRemoteDevice(
+    Future<std::string> serialized_descriptor, int64_t offset,
+    int64_t transfer_size, PjRtRawBuffer::RemoteSendCallback on_done) {
+  auto event = CopyRawToRemoteDeviceAndReturnEvent(
+      serialized_descriptor, offset, transfer_size, on_done);
+  if (!event.ok()) {
+    on_done(event.status(), /*sends_were_enqueued=*/false);
+    return Future<>(event.status());
+  }
+  return tensorflow::down_cast<CommonPjRtClient*>(memory_space()->client())
+      ->MakeTrackedReadyFuture((*event)->async_value(), memory_space(),
+                               "CommonPjRtRawBuffer", "CopyRawToRemoteDevice");
+}
+
 absl::StatusOr<std::unique_ptr<PjRtBuffer>> CommonPjRtBufferImpl::Bitcast(
     xla::PrimitiveType element_type, absl::Span<const int64_t> dims,
     const Layout* device_layout) {

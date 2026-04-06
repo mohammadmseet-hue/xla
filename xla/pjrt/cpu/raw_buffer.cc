@@ -22,6 +22,7 @@ limitations under the License.
 #include <functional>
 #include <memory>
 #include <optional>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -34,7 +35,6 @@ limitations under the License.
 #include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
-#include "absl/synchronization/mutex.h"
 #include "absl/types/span.h"
 #include "xla/backends/cpu/alignment.h"
 #include "xla/future.h"
@@ -62,7 +62,6 @@ limitations under the License.
 #include "xla/util.h"
 #include "xla/xla_data.pb.h"
 #include "tsl/platform/casts.h"
-#include "tsl/profiler/lib/connected_traceme.h"
 #include "tsl/profiler/lib/traceme.h"
 
 namespace xla {
@@ -159,6 +158,13 @@ CpuRawBuffer::CopyRawDeviceToHostAndReturnEvent(void* dst, int64_t offset,
               transfer_size);
   return tsl::MakeRef<CpuTrackedDeviceEvent>(
       tsl::MakeAvailableAsyncValueRef<CpuEvent>());
+}
+
+absl::StatusOr<PjRtDeviceEventRef>
+CpuRawBuffer::CopyRawToRemoteDeviceAndReturnEvent(
+    Future<std::string> serialized_descriptor, int64_t offset,
+    int64_t transfer_size, PjRtRawBuffer::RemoteSendCallback on_done) {
+  return absl::UnimplementedError("CopyRawToRemoteDevice is not implemented");
 }
 
 absl::StatusOr<PjRtDeviceEventRef> CpuRawBuffer::CopyFromLiteral(

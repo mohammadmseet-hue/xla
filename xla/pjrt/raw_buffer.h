@@ -16,7 +16,12 @@ limitations under the License.
 #ifndef XLA_PJRT_RAW_BUFFER_H_
 #define XLA_PJRT_RAW_BUFFER_H_
 
+#include <cstddef>
+#include <cstdint>
+#include <functional>
 #include <optional>
+#include <string>
+#include <vector>
 
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
@@ -27,6 +32,7 @@ limitations under the License.
 #include "xla/pjrt/device_event.h"
 #include "xla/shape.h"
 #include "xla/tsl/concurrency/async_value.h"
+#include "xla/tsl/concurrency/async_value_ref.h"
 #include "xla/tsl/concurrency/ref_count.h"
 
 namespace xla {
@@ -40,6 +46,9 @@ class PjRtBuffer;
 class PjRtRawBuffer : public tsl::ReferenceCounted<PjRtRawBuffer> {
  public:
   virtual ~PjRtRawBuffer() = default;
+
+  using RemoteSendCallback =
+      std::function<void(absl::Status status, bool sends_were_enqueued)>;
 
   static absl::StatusOr<tsl::RCReference<PjRtRawBuffer>> CreateRawAliasOfBuffer(
       PjRtBuffer* buffer);
@@ -74,6 +83,10 @@ class PjRtRawBuffer : public tsl::ReferenceCounted<PjRtRawBuffer> {
   // this method for specific alignment requirements.
   virtual Future<> CopyRawDeviceToHost(void* dst, int64_t offset,
                                        int64_t transfer_size) = 0;
+
+  virtual Future<> CopyRawToRemoteDevice(
+      Future<std::string> serialized_descriptor, int64_t offset,
+      int64_t transfer_size, RemoteSendCallback on_done) = 0;
 };
 
 // Adds methods common to all implementations of PjRtRawBuffer based on device
@@ -104,6 +117,11 @@ class CommonPjRtRawBuffer : public PjRtRawBuffer {
   // this method for specific alignment requirements.
   virtual absl::StatusOr<PjRtDeviceEventRef> CopyRawDeviceToHostAndReturnEvent(
       void* dst, int64_t offset, int64_t transfer_size) = 0;
+
+  virtual absl::StatusOr<PjRtDeviceEventRef>
+  CopyRawToRemoteDeviceAndReturnEvent(Future<std::string> serialized_descriptor,
+                                      int64_t offset, int64_t transfer_size,
+                                      RemoteSendCallback on_done) = 0;
 
   // A sliced buffer is a view into the offset and range of this buffer.
   //

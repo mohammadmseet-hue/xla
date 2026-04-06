@@ -18,8 +18,8 @@ limitations under the License.
 #include <stddef.h>
 #include <stdint.h>
 
-#include <memory>
 #include <optional>
+#include <string>
 
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
@@ -172,6 +172,13 @@ Future<> PjRtCApiRawBuffer::CopyRawDeviceToHost(void* dst, int64_t offset,
                                                 int64_t transfer_size) {
   return pjrt::PjRtCApiRawBuffer_CopyRawDeviceToHost(
       c_api_, c_extension_, c_buffer_, dst, offset, transfer_size);
+}
+
+Future<> PjRtCApiRawBuffer::CopyRawToRemoteDevice(
+    Future<std::string> serialized_descriptor, int64_t offset,
+    int64_t transfer_size, PjRtRawBuffer::RemoteSendCallback on_done) {
+  return xla::Future<>(
+      absl::UnimplementedError("CopyRawToRemoteDevice is not implemented"));
 }
 
 static std::optional<absl::StatusOr<tsl::RCReference<PjRtRawBuffer>>>

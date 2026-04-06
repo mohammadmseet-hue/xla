@@ -18,6 +18,7 @@ limitations under the License.
 #include <cstdint>
 #include <cstring>
 #include <memory>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -26,8 +27,6 @@ limitations under the License.
 #include "absl/log/check.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
-#include "absl/strings/str_cat.h"
-#include "absl/synchronization/mutex.h"
 #include "absl/types/span.h"
 #include "xla/future.h"
 #include "xla/layout.h"
@@ -36,6 +35,7 @@ limitations under the License.
 #include "xla/pjrt/async_work_runner.h"
 #include "xla/pjrt/buffer_sequencing_event.h"
 #include "xla/pjrt/device_event.h"
+#include "xla/pjrt/event_pool.h"
 #include "xla/pjrt/host_memory_allocator.h"
 #include "xla/pjrt/local_device_state.h"
 #include "xla/pjrt/pjrt_client.h"
@@ -45,6 +45,9 @@ limitations under the License.
 #include "xla/pjrt/transpose.h"
 #include "xla/primitive_util.h"
 #include "xla/service/generic_transfer_manager.h"
+#include "xla/service/shaped_buffer.h"
+#include "xla/service/transfer_manager.h"
+#include "xla/shape_tree.h"
 #include "xla/shape_util.h"
 #include "xla/stream_executor/device_address.h"
 #include "xla/stream_executor/stream.h"
@@ -54,7 +57,6 @@ limitations under the License.
 #include "xla/tsl/platform/errors.h"
 #include "xla/tsl/platform/statusor.h"
 #include "tsl/platform/casts.h"
-#include "tsl/profiler/lib/connected_traceme.h"
 
 namespace xla {
 
@@ -207,6 +209,13 @@ PjRtStreamExecutorRawBuffer::CopyRawDeviceToHostAndReturnEvent(
     }
   });
   return tsl::MakeRef<PjRtStreamExecutorDeviceEvent>(std::move(device_event));
+}
+
+absl::StatusOr<PjRtDeviceEventRef>
+PjRtStreamExecutorRawBuffer::CopyRawToRemoteDeviceAndReturnEvent(
+    Future<std::string> serialized_descriptor, int64_t offset,
+    int64_t transfer_size, PjRtRawBuffer::RemoteSendCallback on_done) {
+  return absl::UnimplementedError("CopyRawToRemoteDevice is not implemented");
 }
 
 ShapedBuffer PjRtStreamExecutorRawBuffer::AsShapedBuffer(

@@ -16,6 +16,10 @@ limitations under the License.
 #ifndef XLA_PJRT_C_PJRT_C_API_RAW_BUFFER_EXTERNAL_H_
 #define XLA_PJRT_C_PJRT_C_API_RAW_BUFFER_EXTERNAL_H_
 
+#include <cstddef>
+#include <cstdint>
+#include <string>
+
 #include "absl/status/statusor.h"
 #include "xla/future.h"
 #include "xla/pjrt/c/pjrt_c_api.h"
@@ -75,6 +79,10 @@ class PjRtCApiRawBuffer : public PjRtRawBuffer {
                                int64_t transfer_size) override;
   Future<> CopyRawDeviceToHost(void* dst, int64_t offset,
                                int64_t transfer_size) override;
+  Future<> CopyRawToRemoteDevice(
+      Future<std::string> serialized_descriptor, int64_t offset,
+      int64_t transfer_size,
+      PjRtRawBuffer::RemoteSendCallback on_done) override;
 
  private:
   PJRT_RawBuffer* c_buffer_;

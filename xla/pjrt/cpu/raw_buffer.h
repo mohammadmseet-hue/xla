@@ -19,13 +19,14 @@ limitations under the License.
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <string>
 #include <utility>
+#include <vector>
 
 #include "absl/functional/any_invocable.h"
 #include "absl/log/check.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
-#include "absl/synchronization/mutex.h"
 #include "absl/types/span.h"
 #include "xla/future.h"
 #include "xla/layout.h"
@@ -37,7 +38,6 @@ limitations under the License.
 #include "xla/pjrt/device_event.h"
 #include "xla/pjrt/pjrt_client.h"
 #include "xla/pjrt/raw_buffer.h"
-#include "xla/pjrt/transpose.h"
 #include "xla/tsl/concurrency/async_value.h"
 #include "xla/tsl/concurrency/async_value_ref.h"
 #include "xla/tsl/concurrency/ref_count.h"
@@ -153,6 +153,11 @@ class CpuRawBuffer : public CommonPjRtRawBufferImpl {
 
   absl::StatusOr<PjRtDeviceEventRef> CopyRawDeviceToHostAndReturnEvent(
       void* dst, int64_t offset, int64_t transfer_size) override;
+
+  absl::StatusOr<PjRtDeviceEventRef> CopyRawToRemoteDeviceAndReturnEvent(
+      Future<std::string> serialized_descriptor, int64_t offset,
+      int64_t transfer_size,
+      PjRtRawBuffer::RemoteSendCallback on_done) override;
 
   absl::StatusOr<PjRtDeviceEventRef> CopyFromLiteral(
       const LiteralSlice& literal, const xla::Layout& layout,
