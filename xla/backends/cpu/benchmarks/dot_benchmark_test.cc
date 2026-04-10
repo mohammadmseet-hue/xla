@@ -70,6 +70,11 @@ ABSL_FLAG(bool, aot_compiled_execution, false,
 
 ABSL_FLAG(std::string, xla_flags, "", "Flags to append to XLA_FLAGS");
 
+ABSL_FLAG(bool, constant_rhs, false,
+          "If true, the RHS of the dot product is annotated as a constant. "
+          "This allows testing optimizations like YNNPACK constant weights "
+          "capturing.");
+
 namespace xla::cpu {
 namespace {
 
@@ -120,12 +125,12 @@ struct BatchedDot {
 };
 
 static void BM_BatchedDot(benchmark::State& state, BatchedDot info) {
-  absl::string_view hlo = R"(
+  std::string hlo = R"(
     HloModule dot_$dtype_b$d0_d$d1
 
     ENTRY e {
       p0 = $dtype[$d0,$d1,$d1] parameter(0)
-      p1 = $dtype[$d0,$d1,$d1] parameter(1)
+      p1 = $dtype[$d0,$d1,$d1] parameter(1)$rhs_attrs
       ROOT dot = $out_dtype[$d0,$d1,$d1] dot(p0, p1),
         lhs_batch_dims={0}, rhs_batch_dims={0},
         lhs_contracting_dims={2}, rhs_contracting_dims={1}
@@ -143,7 +148,10 @@ static void BM_BatchedDot(benchmark::State& state, BatchedDot info) {
        {"$out_dtype",
         primitive_util::LowercasePrimitiveTypeName(info.out_dtype)},
        {"$d0", absl::StrCat(info.d0)},
-       {"$d1", absl::StrCat(info.d1)}},
+       {"$d1", absl::StrCat(info.d1)},
+       {"$rhs_attrs", absl::GetFlag(FLAGS_constant_rhs)
+                          ? ", frontend_attributes={is_constant=\"true\"}"
+                          : ""}},
       GetBenchmarkOptions()));
 }
 
@@ -172,6 +180,12 @@ void BM_GenericDot(benchmark::State& state, GenericDot info) {
       HloInstruction::CreateParameter(0, lhs_shape, "lhs"));
   HloInstruction* rhs = builder.AddInstruction(
       HloInstruction::CreateParameter(1, rhs_shape, "rhs"));
+
+  if (absl::GetFlag(FLAGS_constant_rhs)) {
+    FrontendAttributes attributes;
+    (*attributes.mutable_map())["is_constant"] = "true";
+    rhs->set_frontend_attributes(attributes);
+  }
 
   DotDimensionNumbers dot_dnums;
   for (int64_t dim : info.lhs_batch_dims) {
@@ -260,7 +274,7 @@ void BM_Dot(benchmark::State& state, const Shape& shape) {
     HloModule benchmark
     ENTRY main {
       p0 = $a_type[$m,$k] parameter(0)
-      p1 = $b_type[$k,$n] parameter(1)
+      p1 = $b_type[$k,$n] parameter(1)$rhs_attrs
       ROOT %result = $c_type[$m,$n] dot(p0, p1), lhs_contracting_dims={1},
           rhs_contracting_dims={0}
     }
@@ -270,12 +284,16 @@ void BM_Dot(benchmark::State& state, const Shape& shape) {
   PrimitiveType output_type = GetAccumulatorType(input_type);
 
   std::string hlo_data = absl::StrReplaceAll(
-      hlo_template, {{"$m", absl::StrCat(shape.dimensions(0))},
-                     {"$k", absl::StrCat(shape.dimensions(1))},
-                     {"$n", absl::StrCat(shape.dimensions(2))},
-                     {"$a_type", LowercasePrimitiveTypeName(input_type)},
-                     {"$b_type", LowercasePrimitiveTypeName(input_type)},
-                     {"$c_type", LowercasePrimitiveTypeName(output_type)}});
+      hlo_template,
+      {{"$m", absl::StrCat(shape.dimensions(0))},
+       {"$k", absl::StrCat(shape.dimensions(1))},
+       {"$n", absl::StrCat(shape.dimensions(2))},
+       {"$a_type", LowercasePrimitiveTypeName(input_type)},
+       {"$b_type", LowercasePrimitiveTypeName(input_type)},
+       {"$c_type", LowercasePrimitiveTypeName(output_type)},
+       {"$rhs_attrs", absl::GetFlag(FLAGS_constant_rhs)
+                          ? ", frontend_attributes={is_constant=\"true\"}"
+                          : ""}});
 
   TF_ASSERT_OK_AND_ASSIGN(
       auto module_and_iteration_literals,

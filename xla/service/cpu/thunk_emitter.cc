@@ -1466,6 +1466,10 @@ absl::StatusOr<ThunkSequence> ThunkEmitter::EmitYnnFusionThunk(
     // TODO(b/455903737): If we know the RHS is a constant, we should capture it
     // here.
     bool capture_rhs = false;
+    if (dot->operand(1)->opcode() == HloOpcode::kParameter &&
+        dot->operand(1)->frontend_attributes().map().contains("is_constant")) {
+      capture_rhs = true;
+    }
     // Construct YNNPACK subgraph builder from the dot instruction.
     TF_ASSIGN_OR_RETURN(builder, EmitYnnDotBuilder(dot, capture_rhs));
     static constexpr int64_t kCapturedIds[1] = {1};
@@ -1481,8 +1485,29 @@ absl::StatusOr<ThunkSequence> ThunkEmitter::EmitYnnFusionThunk(
     auto* fusion = Cast<HloFusionInstruction>(instruction);
     const HloComputation* computation =
         fusion->fused_instructions_computation();
+
+    std::vector<int64_t> fusion_captured_ids;
+    fusion_captured_ids.reserve(computation->num_parameters());
+    for (const HloInstruction* param : computation->parameter_instructions()) {
+      const HloInstruction* operand =
+          fusion->operand(param->parameter_number());
+      if (param->frontend_attributes().map().contains("is_constant") ||
+          operand->frontend_attributes().map().contains("is_constant")) {
+        fusion_captured_ids.push_back(param->parameter_number());
+      }
+    }
+
     // Construct YNNPACK subgraph builder from the fusion computation.
-    TF_ASSIGN_OR_RETURN(builder, EmitYnnFusionBuilder(computation));
+    TF_ASSIGN_OR_RETURN(builder,
+                        EmitYnnFusionBuilder(computation, fusion_captured_ids));
+
+    return ThunkSequence::Of<YnnFusionThunk>(
+        YnnFusionThunk::Options{}, ThunkInfo(instruction), instruction,
+        std::move(arguments), std::move(results),
+        [b = std::move(builder)](auto, auto, auto arg_buffers) mutable {
+          return b(arg_buffers);
+        },
+        fusion_captured_ids);
   }
 
   return ThunkSequence::Of<YnnFusionThunk>(

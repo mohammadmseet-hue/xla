@@ -159,7 +159,8 @@ absl::StatusOr<uint32_t> DefineConstant(ynn_subgraph_t subgraph,
 }
 
 absl::StatusOr<uint32_t> DefineParameter(ynn_subgraph_t subgraph,
-                                         const HloInstruction* param) {
+                                         const HloInstruction* param,
+                                         const void* data = nullptr) {
   VLOG(3) << absl::StreamFormat("Define tensor value for parameter: %s",
                                 param->ToString());
 
@@ -167,9 +168,10 @@ absl::StatusOr<uint32_t> DefineParameter(ynn_subgraph_t subgraph,
   TF_ASSIGN_OR_RETURN(auto type, YnnType(param->shape().element_type()));
 
   uint32_t tensor_id = param->parameter_number();
-  YNN_RETURN_IF_ERROR(ynn_define_tensor(
-      subgraph, type, dims.size(), dims.data(), /*data=*/nullptr,
-      YNN_VALUE_FLAG_EXTERNAL_INPUT, &tensor_id));
+  uint32_t flags = (data == nullptr) ? YNN_VALUE_FLAG_EXTERNAL_INPUT : 0;
+  YNN_RETURN_IF_ERROR(ynn_define_tensor(subgraph, type, dims.size(),
+                                        dims.data(), /*data=*/data, flags,
+                                        &tensor_id));
 
   return tensor_id;
 }
@@ -590,8 +592,10 @@ absl::StatusOr<uint32_t> DefineConvolutionOp(
 // Emit YNNPACK subgraph for the given HLO computation.
 //===----------------------------------------------------------------------===//
 
-absl::StatusOr<YnnSubgraph> EmitYnnSubgraph(const HloComputation* computation,
-                                            Literals& literals) {
+absl::StatusOr<YnnSubgraph> EmitYnnSubgraph(
+    const HloComputation* computation, Literals& literals,
+    absl::Span<const se::DeviceAddressBase> arguments_buffers,
+    absl::Span<const int64_t> captured_arguments_ids) {
   VLOG(3) << "Emit YNNPACK subgraph for computation: " << computation->name();
 
   TF_ASSIGN_OR_RETURN(
@@ -645,8 +649,13 @@ absl::StatusOr<YnnSubgraph> EmitYnnSubgraph(const HloComputation* computation,
 
     switch (instr->opcode()) {
       case HloOpcode::kParameter: {
+        const void* data = nullptr;
+        if (absl::c_linear_search(captured_arguments_ids,
+                                  instr->parameter_number())) {
+          data = arguments_buffers[instr->parameter_number()].opaque();
+        }
         TF_ASSIGN_OR_RETURN(tensor_ids[instr],
-                            DefineParameter(subgraph.get(), instr));
+                            DefineParameter(subgraph.get(), instr, data));
       } break;
 
       case HloOpcode::kBitcast: {
@@ -741,9 +750,9 @@ absl::StatusOr<YnnSubgraph> EmitYnnDotSubgraph(
                           const void* data = nullptr) -> absl::Status {
     auto dims = YnnDimensions(instr->shape());
     TF_ASSIGN_OR_RETURN(auto type, YnnType(instr->shape().element_type()));
+    uint32_t flags = (data == nullptr) ? YNN_VALUE_FLAG_EXTERNAL_INPUT : 0;
     YNN_RETURN_IF_ERROR(ynn_define_tensor(subgraph.get(), type, dims.size(),
-                                          dims.data(), data,
-                                          YNN_VALUE_FLAG_EXTERNAL_INPUT, &id));
+                                          dims.data(), data, flags, &id));
     tensor_ids[instr] = id;
     return absl::OkStatus();
   };
@@ -804,7 +813,8 @@ absl::StatusOr<YnnSubgraph> EmitYnnConvolutionSubgraph(
 
 absl::StatusOr<absl::AnyInvocable<absl::StatusOr<YnnSubgraph>(
     absl::Span<const se::DeviceAddressBase> arguments_buffers)>>
-EmitYnnFusionBuilder(const HloComputation* computation) {
+EmitYnnFusionBuilder(const HloComputation* computation,
+                     std::vector<int64_t> captured_arguments_ids) {
   // We do not support non-array parameters for YNNPACK operations.
   for (auto& param : computation->parameter_instructions()) {
     if (!param->shape().IsArray()) {
@@ -821,9 +831,11 @@ EmitYnnFusionBuilder(const HloComputation* computation) {
   }
 
   return
-      [computation, literals = Literals()](
+      [computation, literals = Literals(),
+       captured_ids = std::move(captured_arguments_ids)](
           absl::Span<const se::DeviceAddressBase> arguments_buffers) mutable {
-        return EmitYnnSubgraph(computation, literals);
+        return EmitYnnSubgraph(computation, literals, arguments_buffers,
+                               captured_ids);
       };
 }
 
